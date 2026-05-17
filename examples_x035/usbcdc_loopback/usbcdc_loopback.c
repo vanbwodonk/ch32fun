@@ -7,6 +7,7 @@ int main()
     funGpioInitAll();
 
     CDC_init();
+    while (!CDC_connected());
 
     while (1)
     {

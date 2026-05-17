@@ -71,6 +71,7 @@ extern volatile uint8_t CDC_writeBusyFlag;
 void CDC_init(void);
 uint8_t CDC_available(void);
 uint8_t CDC_ready(void);
+uint8_t CDC_connected(void);
 void CDC_flush(void);
 void CDC_write(char c);
 void CDC_write_buf(const char *data, int len);

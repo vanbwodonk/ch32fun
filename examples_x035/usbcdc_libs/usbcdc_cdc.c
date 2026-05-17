@@ -23,6 +23,7 @@ void CDC_init(void) { USB_init(); }
 
 uint8_t CDC_available(void) { return CDC_readByteCount; }
 uint8_t CDC_ready(void) { return !CDC_writeBusyFlag; }
+uint8_t CDC_connected(void) { return CDC_controlLineState & 0x01; }
 
 void CDC_flush(void) {
   if(!CDC_writeBusyFlag && CDC_writePointer > 0) {
@@ -40,10 +41,12 @@ void CDC_write(char c) {
 }
 
 void CDC_write_buf(const char *data, int len) {
-  while(CDC_writeBusyFlag);
+  if (len > 64) len = 64;
   for (int i = 0; i < len; i++)
-    wch_usbcdc_EP2_buffer[64 + CDC_writePointer++] = (unsigned char)data[i];
-  CDC_flush();
+    wch_usbcdc_EP2_buffer[64 + i] = (unsigned char)data[i];
+  USBFSD->UEP2_TX_LEN = len;
+  USBFSD->UEP2_CTRL_H = (USBFSD->UEP2_CTRL_H & ~USBFS_UEP_T_RES_MASK) | USBFS_UEP_T_RES_ACK;
+  CDC_writeBusyFlag = 1;
 }
 
 char CDC_read(void) {
