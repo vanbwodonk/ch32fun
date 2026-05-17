@@ -5,7 +5,8 @@
 ### PC18/PC19 — SDI Debug Lock
 - **Cannot be used as GPIO.** The WCH Serial Debug Interface (SDI) permanently owns PC18 (SWDIO) and PC19 (SWCLK). Even with `AFIO_PCFR1_SWJ_CFG_DISABLE` (which controls ARM SWJ, not the proprietary SDI) the pins stay locked.
 - **`AFIO->PCFR1` bits [26:24] = `0x04000000` (SWJ_CFG_DISABLE) has no effect** on the SDI. This is a known issue: [openwch/ch32x035#8](https://github.com/openwch/ch32x035/issues/8) — no resolution from WCH.
-- **Alternate function remapping (I2C1, USART, etc.) should still work** because the peripheral's pin control overrides SDI at the hardware level. GPIO does not.
+- **I2C1 alternate function remap to PC18/PC19 — does NOT work.** I2C address scan (1-127) found 0 devices. No START condition or clock pulses on logic analyzer. PC18/PC19 are completely locked by SDI for all functions (GPIO, I2C, USART, etc.).
+- **Working I2C on UFQFPN20**: bit-bang I2C on any free GPIO (PA5/PA6 in `i2c_oled_static`). Hardware I2C1 default pins PA10/PA11 are not available in UFQFPN20 package.
 - CFGXR config for extended pins PC16-PC23: each nibble = `MODE[1:0] | CNF[3:2]`. Value `0x01` = Out_PP 10MHz, `0x03` = Out_PP 50MHz, `0xB` = AF_PP 50MHz, `0xF` = AF_OD 50MHz.
 - BSXR register for set/reset of PC16-PC23: bits 0-7 = set, bits 16-23 = reset. PC18 = bit 2/18, PC19 = bit 3/19.
 - **Workaround for I2C on UFQFPN20**: use I2C1 remap 3 (PC18=SDA, PC19=SCL) via AFIO_PCFR1 bits [4:2] = 011. I2C signals should appear even if no OLED is connected.
