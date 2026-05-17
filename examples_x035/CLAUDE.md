@@ -68,6 +68,67 @@ CDC_write_buf("hello\r\n", 7);
 | `usbcdc_libs/` | Shared USB CDC C library |
 | `usbcdc/` | Hello World via USB serial every 1s |
 | `usbcdc_loopback/` | Echo loopback via USB serial |
+| `jump_bootloader/` | Jump to USB bootloader from software via USB CDC command |
+
+## Bootloader Entry — WORKING
+
+**Status: CONFIRMED WORKING** on CH32X035F8U6. The wagiminator `BOOT_now()` method works when combined with pulling D+ low before the reset.
+
+### Working sequence (from `jump_bootloader/`):
+
+```c
+#define NVIC_RESETSYS  ((uint32_t)0x00000080)  // bit 7, NOT bit 3!
+
+void BOOT_now(void) {
+  FLASH->KEYR = FLASH_KEY1;
+  FLASH->KEYR = FLASH_KEY2;
+  FLASH->BOOT_MODEKEYR = FLASH_KEY1;
+  FLASH->BOOT_MODEKEYR = FLASH_KEY2;
+  FLASH->STATR |= FLASH_STATR_BOOT_MODE;   // 0x4000 (bit 14)
+  FLASH->CTLR  |= FLASH_CTLR_LOCK;
+  RCC->RSTSCKR |= RCC_RMVF;
+  NVIC->CFGR = NVIC_RESETSYS | NVIC_KEY3;  // system reset
+}
+
+// Before calling BOOT_now():
+// 1. Pull D+ (PC17) LOW for ~200ms (resets host USB state)
+// 2. Release D+ back to input floating
+// 3. Call BOOT_now()
+```
+
+### Critical details:
+- `FLASH_STATR_BOOT_MODE` = **0x4000** (bit 14), NOT 0x400 (bit 10)
+- `NVIC_RESETSYS` = **0x80** (bit 7), NOT 0x08 (bit 3)
+- D+ must be pulled low then released before the reset
+- After reset, chip enumerates as WCH bootloader via USB
+- Flash with: `wchisp flash firmware.bin`
+
+### Makefile integration (from `jump_bootloader/Makefile`):
+```makefile
+all : jump_bootloader flash
+
+TARGET:=jump_bootloader
+TARGET_MCU:=CH32X035
+ADDITIONAL_C_FILES:=../usbcdc_libs/usbcdc_cdc.c ../usbcdc_libs/usbcdc_descr.c ../usbcdc_libs/usbcdc_handler.c
+include ../../ch32fun/ch32fun.mk
+
+CFLAGS+=-I../usbcdc_libs
+
+jump_bootloader : $(TARGET).bin
+	python -c "import serial; serial.Serial('/dev/ttyACM0', 1200).close()"
+	@sleep 3
+flash : cv_flash
+clean : cv_clean
+```
+
+This triggers the 1200 baud bootloader sequence before flashing via WCH-Link. The `jump_bootloader` target builds the firmware, triggers bootloader entry (1200 baud + DTR low), waits 3 seconds, then `flash` runs `cv_flash` (minichlink over SDI).
+
+### Manual trigger:
+```sh
+python -c "import serial; serial.Serial('/dev/ttyACM0', 1200).close()"
+```
+
+After bootloader entry, flash with `wchisp flash firmware.bin` (USB bootloader) or `minichlink -w firmware.bin -b` (WCH-Link/SDI).
 
 ## UFQFPN20 Pin Availability
 

@@ -24,6 +24,13 @@ void CDC_init(void) { USB_init(); }
 uint8_t CDC_available(void) { return CDC_readByteCount; }
 uint8_t CDC_ready(void) { return !CDC_writeBusyFlag; }
 uint8_t CDC_connected(void) { return CDC_controlLineState & 0x01; }
+uint32_t CDC_baud(void) { return CDC_lineCoding.baudrate; }
+
+/* Forward declaration for ISR-based bootloader check */
+static void _bootloader_check(void);
+
+/* Polling fallback — ISR already handles it, but safe to call from main too */
+void CDC_check_bootloader(void) { _bootloader_check(); }
 
 void CDC_flush(void) {
   if(!CDC_writeBusyFlag && CDC_writePointer > 0) {
@@ -71,6 +78,22 @@ void CDC_EP_init(void) {
   CDC_writeBusyFlag   = 0;
 }
 
+/* Trigger bootloader if baud=1200 and DTR low (Arduino-style) */
+static void _bootloader_check(void)
+{
+    if (CDC_lineCoding.baudrate == 1200 && !(CDC_controlLineState & 0x01))
+    {
+        RCC->APB2PCENR |= RCC_APB2Periph_GPIOC;
+        GPIOC->CFGXR &= ~(0xF << 4);
+        GPIOC->CFGXR |=  (0x01 << 4);
+        GPIOC->BSXR = (1 << 17);
+        for (volatile int i = 0; i < 4000000; i++);
+        GPIOC->CFGXR &= ~(0xF << 4);
+        GPIOC->CFGXR |=  (0x04 << 4);
+        BOOT_now();
+    }
+}
+
 uint8_t CDC_control(void) {
   switch(USB_SetupReq) {
     case GET_LINE_CODING:
@@ -80,6 +103,7 @@ uint8_t CDC_control(void) {
       return (uint8_t)USB_SetupLen;
     case SET_CONTROL_LINE_STATE:
       CDC_controlLineState = wch_usbcdc_EP0_buffer[2];
+      _bootloader_check();
       return 0;
     case SET_LINE_CODING:
       return 0;
@@ -95,6 +119,7 @@ void CDC_EP0_OUT(void) {
     for(i=0; i<((sizeof(CDC_lineCoding)<=len)?sizeof(CDC_lineCoding):len); i++)
       ((uint8_t*)&CDC_lineCoding)[i] = wch_usbcdc_EP0_buffer[i];
     USB_SetupLen = 0;
+    _bootloader_check();
   }
   USBFSD->UEP0_CTRL_H = USBFS_UEP_T_TOG | USBFS_UEP_T_RES_ACK | USBFS_UEP_R_RES_ACK;
 }
@@ -110,5 +135,19 @@ void CDC_EP2_OUT(void) {
     CDC_readByteCount   = USBFSD->RX_LEN;
     CDC_readPointer     = 0;
   }
+}
+
+/* Bootloader entry — wagiminator method */
+#define NVIC_RESETSYS  ((uint32_t)0x00000080)
+
+void BOOT_now(void) {
+  FLASH->KEYR = FLASH_KEY1;
+  FLASH->KEYR = FLASH_KEY2;
+  FLASH->BOOT_MODEKEYR = FLASH_KEY1;
+  FLASH->BOOT_MODEKEYR = FLASH_KEY2;
+  FLASH->STATR |= FLASH_STATR_BOOT_MODE;
+  FLASH->CTLR  |= FLASH_CTLR_LOCK;
+  RCC->RSTSCKR |= RCC_RMVF;
+  NVIC->CFGR = NVIC_RESETSYS | NVIC_KEY3;
 }
 
