@@ -72,6 +72,7 @@ CDC_write_buf("hello\r\n", 7);
 | `usbcdc_loopback/` | Echo loopback via USB serial | Working |
 | `jump_bootloader/` | Jump to USB bootloader from software via USB CDC command | Working |
 | `tim2_encoder/` | TIM2 encoder mode on PA0(CH1)/PA1(CH2), USB CDC debug | Experimenting |
+| `exti_encoder/` | EXTI-based quadrature decoder on PA0/PA1, USB CDC debug | Experimenting |
 
 
 ## Bootloader Entry — WORKING
