@@ -60,6 +60,9 @@ static void i2c_init(void)
     RCC->APB1PRSTR |= RCC_APB1Periph_I2C1;
     RCC->APB1PRSTR &= ~RCC_APB1Periph_I2C1;
 
+    // Must disable SDI on PC18/PC19 first — same as Arduino's GPIO_PinRemapConfig(SWJ_Disable)
+    AFIO->PCFR1 = (AFIO->PCFR1 & ~AFIO_PCFR1_SWJ_CFG) | AFIO_PCFR1_SWJ_CFG_DISABLE;
+    // Then set I2C1 remap to PC18(SDA)/PC19(SCL)
     AFIO->PCFR1 = (AFIO->PCFR1 & ~AFIO_PCFR1_I2C1_REMAP) | I2C1_REMAP_VAL;
 
     GPIOC->CFGXR &= ~(0xF << 8);
@@ -81,7 +84,9 @@ int main()
     SystemInit();
     funGpioInitAll();
     CDC_init();
+    Delay_Ms(100);
     while (!CDC_connected());
+    Delay_Ms(100);
 
     debug("I2C scan PC18=SDA PC19=SCL\r\n");
 

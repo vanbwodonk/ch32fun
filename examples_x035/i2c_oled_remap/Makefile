@@ -1,4 +1,4 @@
-all : flash
+all : jump_bootloader flash
 
 TARGET:=i2c_oled_remap
 TARGET_MCU:=CH32X035
@@ -7,5 +7,8 @@ include ../../ch32fun/ch32fun.mk
 
 CFLAGS+=-I../usbcdc_libs
 
+jump_bootloader : $(TARGET).bin
+	python -c "import serial; serial.Serial('/dev/ttyACM0', 1200).close()"
+	@sleep 3
 flash : cv_flash
 clean : cv_clean

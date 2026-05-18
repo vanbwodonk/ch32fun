@@ -3,9 +3,10 @@
 ## Pin Critical Facts
 
 ### PC18/PC19 — SDI Debug Lock
-- **Cannot be used as GPIO.** The WCH Serial Debug Interface (SDI) permanently owns PC18 (SWDIO) and PC19 (SWCLK). Even with `AFIO_PCFR1_SWJ_CFG_DISABLE` (which controls ARM SWJ, not the proprietary SDI) the pins stay locked.
-- **`AFIO->PCFR1` bits [26:24] = `0x04000000` (SWJ_CFG_DISABLE) has no effect** on the SDI. This is a known issue: [openwch/ch32x035#8](https://github.com/openwch/ch32x035/issues/8) — no resolution from WCH.
-- **I2C1 alternate function remap to PC18/PC19 — does NOT work.** I2C address scan (1-127) found 0 devices. No START condition or clock pulses on logic analyzer. PC18/PC19 are completely locked by SDI for all functions (GPIO, I2C, USART, etc.).
+- **CAN be used as GPIO** by writing `AFIO->PCFR1 = (AFIO->PCFR1 & ~AFIO_PCFR1_SWJ_CFG) | AFIO_PCFR1_SWJ_CFG_DISABLE;` (same as Arduino core's `GPIO_PinRemapConfig(GPIO_Remap_SWJ_Disable, ENABLE)`). Confirmed working in `blink/`.
+- Use **GPIOC->CFGXR** (not CFGLR/CFGHR) for config: each nibble = `CNF[1:0] | MODE[1:0]`. Value `0x3` = Out_PP 50MHz.
+- Use **GPIOC->BSXR** (not BSHR) for set/reset: bits 0-7 = set, bits 16-23 = reset. PC18 = bit 2/18, PC19 = bit 3/19.
+- `funDigitalWrite`/`funPinMode` ch32fun macros only support pins 0-15; use CFGXR/BSXR directly for pins 16+.
 - **Working I2C on UFQFPN20**: bit-bang I2C on any free GPIO (PA5/PA6 in `i2c_oled_static`). Hardware I2C1 default pins PA10/PA11 are not available in UFQFPN20 package.
 - CFGXR config for extended pins PC16-PC23: each nibble = `MODE[1:0] | CNF[3:2]`. Value `0x01` = Out_PP 10MHz, `0x03` = Out_PP 50MHz, `0xB` = AF_PP 50MHz, `0xF` = AF_OD 50MHz.
 - BSXR register for set/reset of PC16-PC23: bits 0-7 = set, bits 16-23 = reset. PC18 = bit 2/18, PC19 = bit 3/19.
@@ -129,6 +130,25 @@ python -c "import serial; serial.Serial('/dev/ttyACM0', 1200).close()"
 ```
 
 After bootloader entry, flash with `wchisp flash firmware.bin` (USB bootloader) or `minichlink -w firmware.bin -b` (WCH-Link/SDI).
+
+## Arduino Core USART4 Bug
+
+The CH32X035 Arduino core (`uart.c`) has **two issues** preventing USART4 from working:
+
+1. **`HAVE_HWSERIAL4` not defined** in `variant_CH32X035G8U.h` — `Serial4` object is never instantiated.
+2. **Naming mismatch**: CH32X035 headers use `USART4_BASE`/`USART4`/`RCC_APB1Periph_USART4`, but `uart.c` checks for `UART4_BASE`/`UART4`/`RCC_APB1Periph_UART4`. The USART4 init block is silently compiled out.
+
+**Fix in `platformio.ini` build_flags:**
+```ini
+build_flags =
+    -DHAVE_HWSERIAL4
+    -DUART4_BASE=USART4_BASE
+    -DUART4=USART4
+    -DRCC_APB1Periph_UART4=RCC_APB1Periph_USART4
+    -DUART4_IRQn=USART4_IRQn
+```
+
+Default USART4 pins (no remap needed): PB0(TX), PB1(RX).
 
 ## UFQFPN20 Pin Availability
 

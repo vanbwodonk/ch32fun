@@ -1,35 +1,48 @@
-#include "ch32fun.h"
 #include <stdio.h>
+#include <string.h>
+#include "ch32fun.h"
+#include "../usbcdc_libs/usbcdc_internal.h"
 
-// use defines to make more meaningful names for our GPIO pins
-#define PIN_1 PA0
-#define PIN_K PA2
-#define PIN_BOB PA4
-#define PIN_KEVIN PA7
+#define PIN_LED PB12
+
+// Extended pins PC18/PC19 use CFGXR (4 bits per pin: CNF[1:0] | MODE[1:0])
+// 0x3 = Out_PP 50MHz, CFGXR nibble positions: PC18@[11:8], PC19@[15:12]
+#define PC18_CFG_VAL  (0x3 << 8)
+#define PC19_CFG_VAL  (0x3 << 12)
+#define PC18_CFG_MASK (0xF << 8)
+#define PC19_CFG_MASK (0xF << 12)
+
+static void msg(const char *s)
+{
+    CDC_write_buf(s, (int)strlen(s));
+}
 
 int main()
 {
-	SystemInit();
+    SystemInit();
+    funGpioInitAll();
 
-	funGpioInitAll(); // Enable GPIOs
+    // Disable SDI on PC18(SWDIO)/PC19(SWCLK) — same method as Arduino core
+    AFIO->PCFR1 = (AFIO->PCFR1 & ~AFIO_PCFR1_SWJ_CFG) | AFIO_PCFR1_SWJ_CFG_DISABLE;
 
-	funPinMode( PIN_1,     GPIO_CFGLR_OUT_10Mhz_PP ); // Set PIN_1 to output
-	funPinMode( PIN_K,     GPIO_CFGLR_OUT_10Mhz_PP ); // Set PIN_K to output
-	funPinMode( PIN_BOB,   GPIO_CFGLR_OUT_10Mhz_PP ); // Set PIN_BOB to output
-	funPinMode( PIN_KEVIN, GPIO_CFGLR_OUT_10Mhz_PP ); // Set PIN_KEVIN to output
+    // Configure PC18, PC19 as push-pull output 50MHz via CFGXR
+    GPIOC->CFGXR = (GPIOC->CFGXR & ~(PC18_CFG_MASK | PC19_CFG_MASK)) | PC18_CFG_VAL | PC19_CFG_VAL;
 
+    funPinMode(PIN_LED, GPIO_CFGLR_OUT_10Mhz_PP);
 
-	while(1)
-	{
-		funDigitalWrite( PIN_1,     FUN_HIGH ); // Turn on PIN_1
-		funDigitalWrite( PIN_K,     FUN_HIGH ); // Turn on PIN_K
-		funDigitalWrite( PIN_BOB,   FUN_HIGH ); // Turn on PIN_BOB
-		funDigitalWrite( PIN_KEVIN, FUN_HIGH ); // Turn on PIN_KEVIN
-		Delay_Ms( 250 );
-		funDigitalWrite( PIN_1,     FUN_LOW );  // Turn off PIN_1
-		funDigitalWrite( PIN_K,     FUN_LOW );  // Turn off PIN_K
-		funDigitalWrite( PIN_BOB,   FUN_LOW );  // Turn off PIN_BOB
-		funDigitalWrite( PIN_KEVIN, FUN_LOW );  // Turn off PIN_KEVIN
-		Delay_Ms( 250 );
-	}
+    CDC_init();
+    while (!CDC_connected());
+
+    msg("CH32X035 PC18/PC19 toggling via AFIO->PCFR1 + CFGXR/BSXR\r\n");
+
+    while (1)
+    {
+        funDigitalWrite(PIN_LED, FUN_HIGH);
+        GPIOC->BSXR = GPIO_BSXR_BS18 | GPIO_BSXR_BS19;
+        Delay_Ms(250);
+
+        funDigitalWrite(PIN_LED, FUN_LOW);
+        GPIOC->BSXR = GPIO_BSXR_BR18 | GPIO_BSXR_BR19;
+        Delay_Ms(250);
+    }
 }

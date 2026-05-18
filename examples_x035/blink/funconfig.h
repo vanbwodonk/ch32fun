@@ -1,5 +1,6 @@
 #ifndef _FUNCONFIG_H
 #define _FUNCONFIG_H
 
-#endif
+#define FUNCONF_USE_DEBUGPRINTF 0
 
+#endif
