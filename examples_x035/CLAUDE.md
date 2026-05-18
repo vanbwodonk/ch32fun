@@ -60,16 +60,19 @@ while (!CDC_connected());
 CDC_write_buf("hello\r\n", 7);
 ```
 
-## Projects Created Today
+## Projects
 
-| Project | What it does |
-|---------|-------------|
-| `blink/` | PB12 + PC18/PC19 toggle, USB CDC debug output |
-| `i2c_oled_remap/` | I2C1 remap to PC18/PC19, USB CDC debug |
-| `usbcdc_libs/` | Shared USB CDC C library |
-| `usbcdc/` | Hello World via USB serial every 1s |
-| `usbcdc_loopback/` | Echo loopback via USB serial |
-| `jump_bootloader/` | Jump to USB bootloader from software via USB CDC command |
+| Project | What it does | Status |
+|---------|-------------|--------|
+| `blink/` | PB12 + PC18/PC19 toggle, USB CDC debug output | Working |
+| `i2c_oled_remap/` | I2C1 remap to PC18/PC19, SSD1306 OLED | Needs HW test |
+| `i2c_scan_remap/` | I2C1 remap to PC18/PC19, address scanner | Needs HW test |
+| `usbcdc_libs/` | Shared USB CDC C library | Working |
+| `usbcdc/` | Hello World via USB serial every 1s | Working |
+| `usbcdc_loopback/` | Echo loopback via USB serial | Working |
+| `jump_bootloader/` | Jump to USB bootloader from software via USB CDC command | Working |
+| `tim2_encoder/` | TIM2 encoder mode on PA0(CH1)/PA1(CH2), USB CDC debug | Experimenting |
+
 
 ## Bootloader Entry — WORKING
 
@@ -131,24 +134,41 @@ python -c "import serial; serial.Serial('/dev/ttyACM0', 1200).close()"
 
 After bootloader entry, flash with `wchisp flash firmware.bin` (USB bootloader) or `minichlink -w firmware.bin -b` (WCH-Link/SDI).
 
-## Arduino Core USART4 Bug
+## TIM2 Encoder Mode — `tim2_encoder/`
 
-The CH32X035 Arduino core (`uart.c`) has **two issues** preventing USART4 from working:
+CH32X035 timers support quadrature encoder mode via the `SMS` bits in `SMCFGR`:
 
-1. **`HAVE_HWSERIAL4` not defined** in `variant_CH32X035G8U.h` — `Serial4` object is never instantiated.
-2. **Naming mismatch**: CH32X035 headers use `USART4_BASE`/`USART4`/`RCC_APB1Periph_USART4`, but `uart.c` checks for `UART4_BASE`/`UART4`/`RCC_APB1Periph_UART4`. The USART4 init block is silently compiled out.
+| SMS | Mode | Count edges |
+|-----|------|------------|
+| 001 | Encoder 1 | TI1 edges, TI2 = direction |
+| 010 | Encoder 2 | TI2 edges, TI1 = direction |
+| 011 | Encoder 3 | Both TI1 + TI2 edges (4x resolution) |
 
-**Fix in `platformio.ini` build_flags:**
-```ini
-build_flags =
-    -DHAVE_HWSERIAL4
-    -DUART4_BASE=USART4_BASE
-    -DUART4=USART4
-    -DRCC_APB1Periph_UART4=RCC_APB1Periph_USART4
-    -DUART4_IRQn=USART4_IRQn
+### Default TIM2 pins (no remap):
+- TIM2_CH1 = **PA0** (available on UFQFPN20)
+- TIM2_CH2 = **PA1** (available on UFQFPN20)
+
+### Register setup (from `tim2_encoder/tim2_encoder.c`):
+```c
+RCC->APB1PCENR |= RCC_APB1Periph_TIM2;
+funPinMode(PA0, GPIO_CFGLR_IN_PUPD);
+funPinMode(PA1, GPIO_CFGLR_IN_PUPD);
+TIM2->CTLR1 = 0;     // disable
+TIM2->CHCTLR1 =      // CC1S=01 (TI1→CH1), CC2S=01 (TI2→CH2)
+  (TIM2->CHCTLR1 & ~TIM_CC1S) | 0x0001 |
+  (TIM2->CHCTLR1 & ~TIM_CC2S) | 0x0100;
+TIM2->CHCTLR1 |= (0xF << 4) | (0xF << 12);  // IC1F=IC2F=0xF filter
+TIM2->SMCFGR = (TIM2->SMCFGR & ~TIM_SMS) | 3;  // encoder mode 3
+TIM2->ATRLR = 0xFFFF;  // max range
+TIM2->CNT = 0x8000;    // center for signed reading
+TIM2->CTLR1 |= TIM_CEN;  // enable
+// Read: (int16_t)(TIM2->CNT - 0x8000)
 ```
 
-Default USART4 pins (no remap needed): PB0(TX), PB1(RX).
+### Gotchas:
+- `funPinMode` for CH32X03x uses a **macro** that shifts `mode` directly into CFGLR. Use `GPIO_CFGLR_IN_PUPD = 8` (clean 4-bit value), NOT `GPIO_Mode_IPU = 0x48` (extra bits bleed into adjacent pin nibbles).
+- ch32fun's `mini_vsnprintf` does NOT support the `+` format flag. Use `%d` not `%+d`.
+- Add IC1F/IC2F input filter (0xF = max) for mechanical encoder debounce. For heavy bounce, also use `IC1PSC` prescaler.
 
 ## UFQFPN20 Pin Availability
 
